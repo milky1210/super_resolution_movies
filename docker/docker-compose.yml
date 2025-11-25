@@ -12,7 +12,7 @@
 
 services:
   # ==========================================================================
-  # CPU版サービス
+  # CPU版サービス（Dev Container対応）
   # ==========================================================================
   app:
     build:
@@ -25,10 +25,8 @@ services:
     
     # ボリュームマウント
     volumes:
-      # 入出力用データディレクトリ
-      - ../data:/data
-      # 設定ファイル（オプション）
-      - ../config:/workspace/config:ro
+      # ソースコード全体（Dev Container用）
+      - ..:/workspace:cached
       # 一時ファイル用（オプション）
       - sr_tmp:/tmp/super_resolution
     
@@ -43,6 +41,9 @@ services:
     # stdin/tty設定（対話的に使用する場合）
     stdin_open: true
     tty: true
+    
+    # コンテナを起動したまま維持（Dev Container用）
+    command: sleep infinity
 
   # ==========================================================================
   # GPU版サービス（NVIDIA GPU対応）

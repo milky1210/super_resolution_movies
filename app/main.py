@@ -27,6 +27,7 @@ from .video_pipeline import (
 )
 from .video_pipeline.config import get_video_info
 from .video_pipeline.upscale_frames import list_available_models
+from .video_pipeline.gpu_utils import log_gpu_info
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -379,6 +380,11 @@ def main() -> int:
             print(f"      説明: {info['description']}")
             print()
         return 0
+    
+    # GPU利用可能性チェック
+    gpu_available = log_gpu_info()
+    if not gpu_available:
+        logger.warning("GPUが利用できません。CPUモードで処理します（処理が遅くなります）")
     
     # 入力検証
     valid, error_msg = validate_inputs(args)

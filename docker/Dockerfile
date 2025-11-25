@@ -34,8 +34,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     unzip \
     ca-certificates \
+    git \
     # 画像処理ライブラリ
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     # Vulkanサポート（GPU利用時）
     libvulkan1 \
@@ -73,8 +74,8 @@ COPY config/ ./config/
 # エントリポイント
 # =============================================================================
 # デフォルトのヘルプを表示
-ENTRYPOINT ["python", "-m", "app.main"]
-CMD ["--help"]
+# ENTRYPOINT ["python", "-m", "app.main"]
+# CMD ["--help"]
 
 # =============================================================================
 # ヘルスチェック
