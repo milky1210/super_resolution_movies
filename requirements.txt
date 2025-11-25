@@ -1,0 +1,16 @@
+# 超解像動画処理ツール - Python依存パッケージ
+#
+# インストール方法:
+#   pip install -r requirements.txt
+
+# YAML設定ファイルの読み込み
+PyYAML>=6.0
+
+# 進捗バー表示
+tqdm>=4.65.0
+
+# 画像処理（フォールバック用）
+Pillow>=9.0.0
+
+# 型ヒントサポート（Python 3.9以下の場合）
+# typing-extensions>=4.0.0

@@ -1,0 +1,110 @@
+# 超解像動画処理ツール設定ファイル（サンプル）
+#
+# このファイルをコピーして settings.yaml として使用してください。
+# 例: cp config/settings.example.yaml config/settings.yaml
+
+# =============================================================================
+# 一般設定
+# =============================================================================
+
+# 一時ディレクトリのデフォルトパス
+default_tmp_dir: "/tmp/super_resolution"
+
+# 処理後に一時ファイルを自動削除するか
+cleanup_tmp: true
+
+# =============================================================================
+# ffmpeg設定
+# =============================================================================
+
+# ffmpegとffprobeのパス（PATHに通っていればコマンド名のみでOK）
+ffmpeg_path: "ffmpeg"
+ffprobe_path: "ffprobe"
+
+# =============================================================================
+# 出力設定
+# =============================================================================
+
+# デフォルトのスケール倍率
+default_scale: 2
+
+# 出力フォーマット
+default_output_format: "mp4"
+
+# ビデオコーデック
+# - libx264: 互換性が高い（推奨）
+# - libx265: 高圧縮率（再生環境に注意）
+# - libsvtav1: AV1コーデック（最新環境向け）
+default_video_codec: "libx264"
+
+# オーディオコーデック
+default_audio_codec: "aac"
+
+# CRF（品質設定）
+# 0-51の範囲、低いほど高品質・大容量
+# 推奨: 18-23（18が高品質、23が標準）
+default_crf: 18
+
+# =============================================================================
+# フレーム設定
+# =============================================================================
+
+# フレーム画像のフォーマット
+frame_format: "png"
+
+# フレームファイル名のパターン
+frame_pattern: "%06d.png"
+
+# =============================================================================
+# 超解像モデル設定
+# =============================================================================
+
+# デフォルトで使用するモデル
+default_model: "realesrgan"
+
+# 利用可能なモデルの定義
+models:
+  # Real-ESRGAN（汎用モデル）
+  realesrgan:
+    name: "Real-ESRGAN"
+    executable: "realesrgan-ncnn-vulkan"
+    args_template: "-i {input} -o {output} -s {scale} -n realesrgan-x4plus"
+    supported_scales: [2, 3, 4]
+    description: "Real-ESRGAN NCNN Vulkan版（実写・汎用向け）"
+
+  # Real-ESRGAN（アニメ特化モデル）
+  realesrgan_anime:
+    name: "Real-ESRGAN Anime"
+    executable: "realesrgan-ncnn-vulkan"
+    args_template: "-i {input} -o {output} -s {scale} -n realesrgan-x4plus-anime"
+    supported_scales: [4]
+    description: "Real-ESRGAN アニメ特化モデル（アニメ・イラスト向け）"
+
+  # RealCUGAN（アニメ向け）
+  # 注意: 別途インストールが必要
+  # realcugan:
+  #   name: "RealCUGAN"
+  #   executable: "realcugan-ncnn-vulkan"
+  #   args_template: "-i {input} -o {output} -s {scale} -n models-pro"
+  #   supported_scales: [2, 3, 4]
+  #   description: "RealCUGAN NCNN Vulkan版（アニメ向け）"
+
+# =============================================================================
+# GPU設定
+# =============================================================================
+
+# GPUを使用するか（falseの場合はCPUフォールバック）
+use_gpu: true
+
+# 使用するGPUのID（複数GPUがある場合）
+gpu_id: 0
+
+# =============================================================================
+# ログ設定
+# =============================================================================
+
+# ログレベル: DEBUG, INFO, WARNING, ERROR
+log_level: "INFO"
+
+# ログファイルのパス（nullの場合は標準出力のみ）
+log_file: null

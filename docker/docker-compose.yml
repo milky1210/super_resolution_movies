@@ -1,0 +1,94 @@
+# 超解像動画処理ツール Docker Compose設定
+#
+# 使用方法:
+#   # CPU版で実行
+#   docker compose run --rm app -i /data/input.mp4 -o /data/output.mp4
+#
+#   # GPU版で実行（NVIDIA Container Runtimeが必要）
+#   docker compose --profile gpu run --rm app-gpu -i /data/input.mp4 -o /data/output.mp4
+#
+#   # ビルド
+#   docker compose build
+
+services:
+  # ==========================================================================
+  # CPU版サービス
+  # ==========================================================================
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        USE_GPU: "false"
+    image: super-resolution-movies:cpu
+    container_name: sr-movies-cpu
+    
+    # ボリュームマウント
+    volumes:
+      # 入出力用データディレクトリ
+      - ../data:/data
+      # 設定ファイル（オプション）
+      - ../config:/workspace/config:ro
+      # 一時ファイル用（オプション）
+      - sr_tmp:/tmp/super_resolution
+    
+    # 環境変数
+    environment:
+      - PYTHONUNBUFFERED=1
+      - SR_CONFIG_PATH=/workspace/config/settings.yaml
+    
+    # 作業ディレクトリ
+    working_dir: /workspace
+    
+    # stdin/tty設定（対話的に使用する場合）
+    stdin_open: true
+    tty: true
+
+  # ==========================================================================
+  # GPU版サービス（NVIDIA GPU対応）
+  # ==========================================================================
+  app-gpu:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        USE_GPU: "true"
+    image: super-resolution-movies:gpu
+    container_name: sr-movies-gpu
+    profiles:
+      - gpu
+    
+    # ボリュームマウント
+    volumes:
+      - ../data:/data
+      - ../config:/workspace/config:ro
+      - sr_tmp:/tmp/super_resolution
+    
+    # 環境変数
+    environment:
+      - PYTHONUNBUFFERED=1
+      - SR_CONFIG_PATH=/workspace/config/settings.yaml
+      - NVIDIA_VISIBLE_DEVICES=all
+    
+    # 作業ディレクトリ
+    working_dir: /workspace
+    
+    # GPU設定（Docker Compose v2.x / Docker 19.03+）
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    
+    # stdin/tty設定
+    stdin_open: true
+    tty: true
+
+# =============================================================================
+# 名前付きボリューム
+# =============================================================================
+volumes:
+  sr_tmp:
+    driver: local
