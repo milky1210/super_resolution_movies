@@ -80,6 +80,17 @@ def upscale_frames(
     
     logger.info(f"超解像処理開始: {len(frame_files)}フレーム, スケール: {scale}x")
     
+    # まずCUDA版Real-ESRGANを試す
+    try:
+        from .realesrgan_cuda import is_cuda_available, upscale_with_cuda
+        if is_cuda_available():
+            logger.info("CUDA版Real-ESRGANを使用します")
+            return upscale_with_cuda(input_dir, output_dir, scale)
+    except ImportError as e:
+        logger.debug(f"CUDA版をインポートできません: {e}")
+    except Exception as e:
+        logger.warning(f"CUDA版の初期化に失敗: {e}")
+    
     # モデル実行ファイルの存在確認
     executable = model_config.executable
     executable_path = shutil.which(executable)

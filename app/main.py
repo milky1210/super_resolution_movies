@@ -272,12 +272,15 @@ def process_video(
             logger.info("フレーム抽出をスキップします")
             skip_extraction = True
     
-    if frames_upscaled_dir.exists():
+    if frames_upscaled_dir.exists() and frames_original_dir.exists():
         existing_upscaled = list(frames_upscaled_dir.glob("*.png"))
-        if existing_upscaled:
-            logger.info(f"既存の超解像フレームを発見: {len(existing_upscaled)}枚")
+        existing_original = list(frames_original_dir.glob("*.png"))
+        if existing_upscaled and len(existing_upscaled) >= len(existing_original):
+            logger.info(f"既存の超解像フレームを発見: {len(existing_upscaled)}枚（全フレーム処理済み）")
             logger.info("超解像処理をスキップします")
             skip_upscale = True
+        elif existing_upscaled:
+            logger.info(f"既存の超解像フレームを発見: {len(existing_upscaled)}/{len(existing_original)}枚（一部処理済み、再開します）")
     
     try:
         # 1. 動画情報の取得
