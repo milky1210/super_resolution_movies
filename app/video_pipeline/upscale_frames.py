@@ -248,7 +248,7 @@ def _fallback_upscale(
         try:
             img = Image.open(frame_path)
             new_size = (img.width * scale, img.height * scale)
-            resized = img.resize(new_size, Image.BICUBIC)
+            resized = img.resize(new_size, Image.Resampling.BICUBIC)
             
             output_path = output_dir / frame_path.name
             resized.save(output_path, "PNG")
