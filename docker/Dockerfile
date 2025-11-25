@@ -41,22 +41,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Vulkanサポート（GPU利用時）
     libvulkan1 \
     mesa-vulkan-drivers \
+    vulkan-tools \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# NVIDIA Vulkanドライバの設定（ホストのドライバを使用）
+ENV VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json
+ENV VK_DRIVER_FILES=/usr/share/vulkan/icd.d/nvidia_icd.json
+
 # =============================================================================
-# Real-ESRGAN NCNN Vulkanのダウンロード（オプション）
+# Real-ESRGAN (Python版・CUDA対応)のインストール
 # =============================================================================
-# 注意: 実際の使用時にはライセンスを確認してください
-# Real-ESRGANは別途ダウンロードする必要があります
-#
-# 以下はReal-ESRGAN NCNN Vulkanを手動でダウンロードする場合の例:
-# RUN wget -q https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip \
-#     && unzip realesrgan-ncnn-vulkan-20220424-ubuntu.zip -d /opt/realesrgan \
-#     && chmod +x /opt/realesrgan/realesrgan-ncnn-vulkan \
-#     && rm realesrgan-ncnn-vulkan-20220424-ubuntu.zip
-#
-# ENV PATH="/opt/realesrgan:${PATH}"
+RUN pip install realesrgan basicsr facexlib gfpgan
+RUN pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
 # =============================================================================
 # Pythonパッケージのインストール

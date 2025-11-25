@@ -13,5 +13,11 @@ tqdm>=4.65.0
 # 注意: 10.2.0以降を使用してセキュリティ脆弱性を回避
 Pillow>=10.2.0
 
+# 画像処理（OpenCV）
+opencv-python>=4.8.0
+
+# NumPy
+numpy>=1.24.0
+
 # 型ヒントサポート（Python 3.9以下の場合）
 # typing-extensions>=4.0.0

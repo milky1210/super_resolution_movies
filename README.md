@@ -1,204 +1,232 @@
-# Super Resolution Movies
+# 超解像動画処理ツール (Super Resolution Movies)
 
-動画を ffmpeg + Deep Learning ベースの超解像モデルでエンドツーエンド処理するツール。
+Real-ESRGANモデルを使用して動画を高解像度化するツールです。NVIDIA GPUによるCUDA加速に対応し、効率的な処理が可能です。
 
-## 概要
+## 特徴
 
-720p程度の動画を1080p〜4K相当までアップスケールするバッチ処理ツールです。
-実写・アニメ両方に対応した汎用的な処理パイプラインを提供します。
-
-### 処理フロー
-
-1. **フレーム抽出**: ffmpegで動画からフレームを連番PNG画像として抽出（音声も別途保存）
-2. **超解像処理**: Real-ESRGANなどのCLIツールでフレーム画像を一括処理
-3. **動画再構成**: ffmpegで超解像フレーム＋元音声から動画を再構成
+- **Real-ESRGAN対応**: 実写映像に最適化されたAI超解像モデル
+- **GPU加速**: NVIDIA GPU (CUDA) による高速処理
+- **メモリ効率**: 1フレームずつ処理してメモリ使用量を最小化
+- **再開機能**: 中断しても処理済みフレームをスキップして再開可能
+- **Docker対応**: 依存関係を含む再現可能な環境
 
 ## 動作環境
 
-- **ホストOS**: Windows 11 + Docker Desktop（WSL2ベース）
-- **推奨GPU**: NVIDIA RTX 3090（GPU非搭載でもCPUで動作可能）
-- **Python**: 3.10以上
+### 必須要件
+- Docker Desktop (WSL2バックエンド推奨)
+- NVIDIA GPU + ドライバー 450.80.02以降
+- NVIDIA Container Toolkit
 
-## クイックスタート
+### 推奨スペック
+- **GPU**: NVIDIA GeForce RTX 3090 (24GB VRAM) 以上
+- **RAM**: 64GB以上
+- **ストレージ**: 高速SSD (フレーム保存用)
 
-### Dockerを使用する場合（推奨）
+## セットアップ
+
+### 1. リポジトリのクローン
 
 ```bash
-# リポジトリのクローン
-git clone https://github.com/yourusername/super_resolution_movies.git
+git clone https://github.com/milky1210/super_resolution_movies.git
 cd super_resolution_movies
-
-# dataディレクトリを作成し、入力動画を配置
-mkdir -p data
-cp /path/to/your/video.mp4 data/input.mp4
-
-# CPU版でビルド・実行
-docker compose -f docker/docker-compose.yml build
-docker compose -f docker/docker-compose.yml run --rm app \
-    -i /data/input.mp4 -o /data/output.mp4 --scale 2
-
-# GPU版で実行（NVIDIA Container Runtimeが必要）
-docker compose -f docker/docker-compose.yml --profile gpu run --rm app-gpu \
-    -i /data/input.mp4 -o /data/output.mp4 --scale 4
 ```
 
-### ローカル環境で実行する場合
+### 2. Dockerイメージのビルド
 
-```bash
-# 依存パッケージのインストール
-pip install -r requirements.txt
+```powershell
+# GPU版（推奨）
+docker compose -f docker/docker-compose.yml --profile gpu build app-gpu
 
-# 基本的な実行
-python -m app.main -i input.mp4 -o output.mp4
-
-# スケールとモデルを指定
-python -m app.main -i input.mp4 -o output.mp4 --scale 4 --model realesrgan
-
-# 利用可能なモデル一覧を表示
-python -m app.main --list-models
+# CPU版（GPUがない場合）
+docker compose -f docker/docker-compose.yml build app
 ```
 
-## コマンドライン引数
+### 3. コンテナの起動
+
+```powershell
+# GPU版コンテナを起動
+docker compose -f docker/docker-compose.yml --profile gpu up -d
+
+# 起動確認
+docker ps
+```
+
+## 使用方法
+
+### 基本的な使い方
+
+```powershell
+# 1. 入力動画を data/ ディレクトリに配置
+cp your_video.mp4 data/
+
+# 2. 超解像処理を実行（2倍拡大）
+docker exec sr-movies-gpu python -m app.main `
+    -i /data/your_video.mp4 `
+    -o /data/your_video_2x.mp4 `
+    --scale 2
+
+# 3. 出力動画を確認
+ls data/your_video_2x.mp4
+```
+
+### コマンドラインオプション
 
 ```
-usage: main.py [-h] [-i INPUT] [-o OUTPUT] [--scale {2,3,4}] [--model MODEL]
-               [--fps FPS] [--tmp-dir TMP_DIR] [--no-cleanup] [--config CONFIG]
-               [--crf CRF] [--preset {ultrafast,...,veryslow}]
-               [--list-models] [--log-level {DEBUG,INFO,WARNING,ERROR}]
-               [--log-file LOG_FILE]
+usage: python -m app.main [-h] -i INPUT -o OUTPUT [--scale {2,3,4}]
+                          [--model MODEL] [--fps FPS] [--tmp-dir TMP_DIR]
+                          [--no-cleanup] [--crf CRF] [--preset PRESET]
+                          [--list-models] [--log-level {DEBUG,INFO,WARNING,ERROR}]
 
 オプション:
-  -i, --input         入力動画のパス
-  -o, --output        出力動画のパス
-  --scale             スケール倍率（2, 3, 4）デフォルト: 2
-  --model             使用する超解像モデル（設定ファイル内のキー）
-  --fps               出力FPS（未指定時は元動画を引き継ぐ）
-  --tmp-dir           中間フレーム保存用一時ディレクトリ
-  --no-cleanup        処理後に一時ファイルを削除しない
-  --config            設定ファイル（YAML）のパス
-  --crf               出力品質（0-51、低いほど高品質）デフォルト: 18
-  --preset            エンコード速度プリセット
-  --list-models       利用可能な超解像モデル一覧を表示
-  --log-level         ログレベル
-  --log-file          ログファイルのパス
+  -i, --input INPUT     入力動画のパス
+  -o, --output OUTPUT   出力動画のパス
+  --scale {2,3,4}       スケール倍率（デフォルト: 2）
+  --model MODEL         使用する超解像モデル
+  --fps FPS             出力動画のFPS（未指定時は元動画を引き継ぐ）
+  --tmp-dir TMP_DIR     中間ファイルを保存する一時ディレクトリ
+  --no-cleanup          処理後に一時ファイルを削除しない
+  --crf CRF             出力品質（0-51、低いほど高品質、デフォルト: 18）
+  --preset PRESET       エンコード速度（ultrafast～veryslow、デフォルト: medium）
+  --list-models         利用可能なモデルの一覧を表示
+  --log-level LEVEL     ログレベル（デフォルト: INFO）
 ```
 
-## ディレクトリ構成
+### 処理の中断と再開
 
-```
-super_resolution_movies/
-├── app/
-│   ├── __init__.py
-│   ├── main.py                    # CLIエントリポイント
-│   └── video_pipeline/
-│       ├── __init__.py
-│       ├── config.py              # 設定管理
-│       ├── extract_frames.py      # フレーム・音声抽出
-│       ├── upscale_frames.py      # 超解像処理
-│       └── rebuild_video.py       # 動画再構成
-├── config/
-│   └── settings.example.yaml      # 設定ファイルサンプル
-├── docker/
-│   ├── Dockerfile
-│   └── docker-compose.yml
-├── data/                          # 入出力用（gitignore対象）
-├── requirements.txt
-└── README.md
-```
+処理を中断しても、`--tmp-dir` を指定していれば再開可能です：
 
-## 設定ファイル
+```powershell
+# 処理開始（一時ディレクトリを指定）
+docker exec sr-movies-gpu python -m app.main `
+    -i /data/video.mp4 `
+    -o /data/video_2x.mp4 `
+    --scale 2 `
+    --tmp-dir /data/tmp_video `
+    --no-cleanup
 
-`config/settings.example.yaml` をコピーして `config/settings.yaml` を作成し、
-環境に合わせてカスタマイズしてください。
-
-```yaml
-# 主な設定項目
-default_scale: 2           # デフォルトのスケール倍率
-default_model: "realesrgan"  # デフォルトの超解像モデル
-use_gpu: true              # GPU使用の有無
-default_crf: 18            # 出力動画の品質
-
-# 超解像モデルの追加・変更
-models:
-  realesrgan:
-    name: "Real-ESRGAN"
-    executable: "realesrgan-ncnn-vulkan"
-    supported_scales: [2, 3, 4]
+# 中断後、同じコマンドで再開（処理済みフレームはスキップされる）
+docker exec sr-movies-gpu python -m app.main `
+    -i /data/video.mp4 `
+    -o /data/video_2x.mp4 `
+    --scale 2 `
+    --tmp-dir /data/tmp_video `
+    --no-cleanup
 ```
 
-## 超解像モデルのセットアップ
+### 一時ファイルのクリーンアップ
 
-### Real-ESRGAN NCNN Vulkan
+```powershell
+# 特定の一時ディレクトリを削除
+docker exec sr-movies-gpu python -m app.main --clean /data/tmp_video
 
-1. [リリースページ](https://github.com/xinntao/Real-ESRGAN/releases)からダウンロード
-2. 展開してPATHに追加、または設定ファイルでパスを指定
-
-```bash
-# Windowsの場合
-# realesrgan-ncnn-vulkan.exeをダウンロードしてPATHに追加
-
-# Linux/Dockerの場合
-wget https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip
-unzip realesrgan-ncnn-vulkan-20220424-ubuntu.zip
-chmod +x realesrgan-ncnn-vulkan
-export PATH=$PATH:$(pwd)
+# または手動で削除
+docker exec sr-movies-gpu rm -rf /data/tmp_video
 ```
 
-### フォールバックモード
+## 処理パイプライン
 
-超解像モデルがインストールされていない場合、Pillowを使用した
-バイキュービック補間によるリサイズが自動的に適用されます（品質は劣ります）。
+1. **フレーム抽出**: 入力動画をPNGフレームに分解
+2. **超解像処理**: Real-ESRGANモデルで各フレームを高解像度化
+3. **動画再構成**: 超解像フレームを動画に結合（元音声を保持）
 
-## GPU対応
-
-### Windows + Docker Desktop
-
-1. WSL2バックエンドを有効化
-2. NVIDIA Container Toolkit をインストール
-3. Docker Desktopで「Use the WSL 2 based engine」を有効化
-
-### GPU版の実行
-
-```bash
-docker compose -f docker/docker-compose.yml --profile gpu run --rm app-gpu \
-    -i /data/input.mp4 -o /data/output.mp4 --scale 4
+```
+入力動画 (1080p) → フレーム抽出 → Real-ESRGAN → 動画再構成 → 出力動画 (2160p)
 ```
 
-## 処理例
+## 利用可能なモデル
 
-### 720p → 1080p（2倍スケール）
+| モデル名 | 説明 | 推奨用途 |
+|---------|------|----------|
+| RealESRGAN_x4plus | 高品質汎用モデル（デフォルト） | 実写映像全般 |
+| RealESRNet_x4plus | シャープな出力 | ノイズの少ない映像 |
+| realesr-general-x4v3 | 最新汎用モデル | 幅広い映像 |
 
-```bash
-python -m app.main -i video_720p.mp4 -o video_1080p.mp4 --scale 2
-```
+## パフォーマンス
 
-### 720p → 4K（4倍スケール、アニメ向け）
+### 処理速度の目安（RTX 3090）
 
-```bash
-python -m app.main -i anime_720p.mp4 -o anime_4k.mp4 --scale 4 --model realesrgan_anime
-```
+| 解像度 | スケール | 速度 |
+|--------|----------|------|
+| 1080x608 | 2x | 約0.4フレーム/秒 |
+| 1920x1080 | 2x | 約0.2フレーム/秒 |
 
-### 高品質エンコード
+### メモリ使用量
 
-```bash
-python -m app.main -i input.mp4 -o output.mp4 --scale 2 --crf 15 --preset slow
-```
+- **VRAM**: 約8-12GB（モデルと解像度による）
+- **システムRAM**: 約600MB（メモリ効率化済み）
 
 ## トラブルシューティング
 
-### メモリ不足
+### GPUが認識されない
 
-長時間の動画を処理する場合、一時フレームが大量にディスクを消費します。
-`--tmp-dir` で十分な空き容量のあるディレクトリを指定してください。
-
-### GPU認識エラー
-
-```bash
-# NVIDIAドライバの確認
+```powershell
+# NVIDIAドライバーの確認
 nvidia-smi
 
-# Docker内でのGPU確認
-docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
+# Dockerコンテナ内でGPUを確認
+docker exec sr-movies-gpu python -c "import torch; print(torch.cuda.is_available())"
+```
+
+### メモリ不足エラー
+
+処理はメモリ効率的に1フレームずつ行われますが、大きな解像度の場合はバッチサイズを調整してください。
+
+### 処理が遅い
+
+- `--preset fast` を使用してエンコード速度を上げる
+- 一時ディレクトリにSSDを使用する
+
+## 開発
+
+### ローカル開発環境
+
+```powershell
+# 仮想環境の作成
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+
+# 依存関係のインストール
+pip install -r requirements.txt
+```
+
+### コンテナの再ビルド
+
+コードを変更した場合：
+
+```powershell
+# コンテナを停止
+docker compose -f docker/docker-compose.yml --profile gpu down
+
+# イメージを再ビルド
+docker compose -f docker/docker-compose.yml --profile gpu build app-gpu
+
+# コンテナを再起動
+docker compose -f docker/docker-compose.yml --profile gpu up -d
+```
+
+**注意**: ソースコードはボリュームマウントされているため、Python コードの変更は再ビルド不要で即座に反映されます。再ビルドが必要なのは `Dockerfile` や `requirements.txt` を変更した場合のみです。
+
+## ディレクトリ構造
+
+```
+super_resolution_movies/
+├── app/                          # アプリケーションコード
+│   ├── main.py                   # CLIエントリポイント
+│   └── video_pipeline/           # 処理パイプライン
+│       ├── config.py             # 設定管理
+│       ├── extract_frames.py     # フレーム抽出
+│       ├── upscale_frames.py     # 超解像処理
+│       ├── realesrgan_cuda.py    # Real-ESRGAN CUDA実装
+│       ├── rebuild_video.py      # 動画再構成
+│       └── gpu_utils.py          # GPU検出ユーティリティ
+├── config/                       # 設定ファイル
+│   └── settings.example.yaml     # 設定例
+├── data/                         # 入出力データ
+├── docker/                       # Docker関連
+│   ├── Dockerfile                # イメージ定義
+│   └── docker-compose.yml        # Compose設定
+├── requirements.txt              # Python依存関係
+└── README.md                     # このファイル
 ```
 
 ## ライセンス

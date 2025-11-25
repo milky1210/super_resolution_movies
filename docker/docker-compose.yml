@@ -61,8 +61,11 @@ services:
     
     # ボリュームマウント
     volumes:
+      # ソースコードをマウント（リビルド後も最新コードが使用される）
+      - ..:/workspace:cached
+      # データディレクトリ（入出力動画）
       - ../data:/data
-      - ../config:/workspace/config:ro
+      # 一時ファイル用
       - sr_tmp:/tmp/super_resolution
     
     # 環境変数
@@ -70,6 +73,7 @@ services:
       - PYTHONUNBUFFERED=1
       - SR_CONFIG_PATH=/workspace/config/settings.yaml
       - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
     
     # 作業ディレクトリ
     working_dir: /workspace
@@ -77,15 +81,20 @@ services:
     # GPU設定（Docker Compose v2.x / Docker 19.03+）
     deploy:
       resources:
+        limits:
+          memory: 16G  # メモリ上限を16GBに制限
         reservations:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
+              capabilities: [gpu, compute, utility, video]
     
     # stdin/tty設定
     stdin_open: true
     tty: true
+    
+    # コンテナを起動したまま維持
+    command: sleep infinity
 
 # =============================================================================
 # 名前付きボリューム

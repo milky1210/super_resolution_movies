@@ -117,6 +117,15 @@ def _batch_upscale(
     """
     ディレクトリ単位でバッチ処理を行う（Real-ESRGAN向け）
     """
+    # CUDA版が利用可能ならそちらを使用
+    try:
+        from .realesrgan_cuda import is_cuda_available, upscale_with_cuda
+        if is_cuda_available():
+            logger.info("CUDA版Real-ESRGANを使用します")
+            return upscale_with_cuda(input_dir, output_dir, scale)
+    except ImportError:
+        logger.info("CUDA版が利用できません。CLI版を使用します")
+    
     # デフォルトのモデル名を設定
     if model_name is None:
         if scale == 4:
@@ -158,6 +167,7 @@ def _batch_upscale(
         )
         
         # 進捗バーを表示しながら出力を監視
+        import time
         with tqdm(total=total_frames, desc="超解像処理", unit="frames") as pbar:
             processed = 0
             while True:
@@ -174,6 +184,9 @@ def _batch_upscale(
                     if final_files > processed:
                         pbar.update(final_files - processed)
                     break
+                
+                # 1秒待機してから再チェック
+                time.sleep(1)
         
         if process.returncode != 0:
             _, stderr = process.communicate()

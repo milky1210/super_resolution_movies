@@ -160,6 +160,13 @@ def parse_args() -> argparse.Namespace:
         help="利用可能な超解像モデルの一覧を表示",
     )
     parser.add_argument(
+        "--clean",
+        type=str,
+        default=None,
+        metavar="TMP_DIR",
+        help="指定した一時ディレクトリをクリーンアップ",
+    )
+    parser.add_argument(
         "--log-level",
         type=str,
         default="INFO",
@@ -254,6 +261,24 @@ def process_video(
     
     logger.info(f"作業ディレクトリ: {work_dir}")
     
+    # 既存のフレームをチェック
+    skip_extraction = False
+    skip_upscale = False
+    
+    if frames_original_dir.exists():
+        existing_frames = list(frames_original_dir.glob("*.png"))
+        if existing_frames:
+            logger.info(f"既存のオリジナルフレームを発見: {len(existing_frames)}枚")
+            logger.info("フレーム抽出をスキップします")
+            skip_extraction = True
+    
+    if frames_upscaled_dir.exists():
+        existing_upscaled = list(frames_upscaled_dir.glob("*.png"))
+        if existing_upscaled:
+            logger.info(f"既存の超解像フレームを発見: {len(existing_upscaled)}枚")
+            logger.info("超解像処理をスキップします")
+            skip_upscale = True
+    
     try:
         # 1. 動画情報の取得
         logger.info("=" * 50)
@@ -273,39 +298,52 @@ def process_video(
         logger.info("ステップ 2/4: フレーム抽出")
         logger.info("=" * 50)
         
-        frame_count, actual_fps = extract_frames(
-            video_path=input_path,
-            output_dir=str(frames_original_dir),
-            ffmpeg_path=settings.ffmpeg_path,
-            ffprobe_path=settings.ffprobe_path,
-            frame_pattern=settings.frame_pattern,
-            fps=target_fps,
-        )
-        logger.info(f"抽出完了: {frame_count}フレーム")
+        if not skip_extraction:
+            frame_count, actual_fps = extract_frames(
+                video_path=input_path,
+                output_dir=str(frames_original_dir),
+                ffmpeg_path=settings.ffmpeg_path,
+                ffprobe_path=settings.ffprobe_path,
+                frame_pattern=settings.frame_pattern,
+                fps=target_fps,
+            )
+            logger.info(f"抽出完了: {frame_count}フレーム")
+        else:
+            # 既存フレームからカウント
+            frame_count = len(list(frames_original_dir.glob("*.png")))
+            actual_fps = target_fps
+            logger.info(f"既存フレームを使用: {frame_count}フレーム")
         
         # 音声抽出
         has_audio = False
-        if video_info["has_audio"]:
+        if video_info["has_audio"] and not audio_file.exists():
             has_audio = extract_audio(
                 video_path=input_path,
                 output_path=str(audio_file),
                 ffmpeg_path=settings.ffmpeg_path,
                 ffprobe_path=settings.ffprobe_path,
             )
+        elif audio_file.exists():
+            has_audio = True
+            logger.info(f"既存の音声ファイルを使用: {audio_file}")
         
         # 3. 超解像処理
         logger.info("=" * 50)
         logger.info("ステップ 3/4: 超解像処理")
         logger.info("=" * 50)
         
-        upscaled_count = upscale_frames(
-            input_dir=str(frames_original_dir),
-            output_dir=str(frames_upscaled_dir),
-            settings=settings,
-            model_key=model_key,
-            scale=scale,
-        )
-        logger.info(f"超解像処理完了: {upscaled_count}フレーム")
+        if not skip_upscale:
+            upscaled_count = upscale_frames(
+                input_dir=str(frames_original_dir),
+                output_dir=str(frames_upscaled_dir),
+                settings=settings,
+                model_key=model_key,
+                scale=scale,
+            )
+            logger.info(f"超解像処理完了: {upscaled_count}フレーム")
+        else:
+            upscaled_count = len(list(frames_upscaled_dir.glob("*.png")))
+            logger.info(f"既存の超解像フレームを使用: {upscaled_count}フレーム")
         
         # 4. 動画再構成
         logger.info("=" * 50)
@@ -365,6 +403,22 @@ def main() -> int:
     
     # 設定の読み込み
     settings = load_config(args.config)
+    
+    # クリーンアップ
+    if args.clean:
+        clean_dir = Path(args.clean)
+        if clean_dir.exists():
+            logger.info(f"一時ディレクトリをクリーンアップ中: {clean_dir}")
+            try:
+                shutil.rmtree(clean_dir)
+                logger.info("クリーンアップ完了")
+                return 0
+            except Exception as e:
+                logger.error(f"クリーンアップに失敗: {e}")
+                return 1
+        else:
+            logger.error(f"指定されたディレクトリが見つかりません: {clean_dir}")
+            return 1
     
     # モデル一覧の表示
     if args.list_models:
