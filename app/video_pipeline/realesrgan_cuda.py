@@ -9,10 +9,35 @@ import logging
 from pathlib import Path
 import urllib.request
 import os
+import time
+from datetime import datetime
 
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
+
+
+def _setup_file_logger(output_dir: Path) -> logging.Logger:
+    """ファイルログを設定"""
+    log_file = output_dir.parent / "processing.log"
+    
+    # ファイルハンドラを作成
+    file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s | %(levelname)s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    ))
+    
+    # ルートロガーにハンドラを追加（重複防止）
+    root_logger = logging.getLogger()
+    # 既存のファイルハンドラを削除
+    for handler in root_logger.handlers[:]:
+        if isinstance(handler, logging.FileHandler):
+            root_logger.removeHandler(handler)
+    root_logger.addHandler(file_handler)
+    
+    return log_file
 
 
 def _download_model(model_url: str, model_path: Path) -> Path:
@@ -28,7 +53,9 @@ def _download_model(model_url: str, model_path: Path) -> Path:
     return model_path
 
 
-def _create_realesrgan_model(scale: int = 4):
+def義t
+
+義t(scale: int = 4):
     """Real-ESRGANモデルを作成（RRDBNetアーキテクチャ）"""
     import torch
     import torch.nn as nn
@@ -92,16 +119,18 @@ def _create_realesrgan_model(scale: int = 4):
 def upscale_with_cuda(
     input_dir: Path,
     output_dir: Path,
-    scale: int = 2,
+    scale: int = 4,
     model_name: str = 'RealESRGAN_x4plus',
 ) -> int:
     """
     CUDAを使用してフレームを超解像処理
     
+    Real-ESRGANは常に4倍出力を生成し、scale=2の場合は内部でリサイズする。
+    
     Args:
         input_dir: 入力フレームディレクトリ
         output_dir: 出力フレームディレクトリ
-        scale: スケール倍率
+        scale: スケール倍率（2または4）
         model_name: モデル名
         
     Returns:
@@ -171,6 +200,10 @@ def upscale_with_cuda(
     
     logger.info(f"GPU超解像処理開始: {len(frame_files)}フレーム, デバイス: {device}")
     
+    # ファイルログを設定
+    log_file = _setup_file_logger(output_dir)
+    logger.info(f"ログファイル: {log_file}")
+    
     # メモリ効率重視: 1フレームずつ処理（VRAM 24GB, RAM 64GBを効率的に使用）
     # バッチ処理はCPUメモリを大量消費するため、単一フレーム処理に変更
     processed = 0
@@ -186,74 +219,121 @@ def upscale_with_cuda(
     
     logger.info(f"処理対象: {len(frames_to_process)}フレーム")
     
-    # 定期的なメモリクリーンアップ間隔
-    gc_interval = 50
+    # バッチ処理設定（小さいバッチで効率化しつつVRAMオーバーフローを防ぐ）
+    batch_size = 2  # 540x304なら2枚同時処理で約8GB VRAM使用
+    gc_interval = 50  # バッチ処理なので間隔を短く
+    progress_interval = 500  # 進捗ログ間隔
+    start_time = time.time()
+    last_log_time = start_time
     
-    for i, frame_path in enumerate(tqdm(frames_to_process, desc="GPU超解像処理", unit="frame")):
+    # バッチ処理で効率化
+    for batch_start in tqdm(range(0, len(frames_to_process), batch_size), 
+                            desc="GPU超解像処理", unit="batch"):
+        batch_paths = frames_to_process[batch_start:batch_start + batch_size]
+        
         try:
-            # 画像読み込み（メモリ効率的に1枚ずつ）
-            img = Image.open(frame_path).convert('RGB')
-            w, h = img.size
+            # バッチ内の画像を読み込み
+            batch_tensors = []
+            for frame_path in batch_paths:
+                img = Image.open(frame_path).convert('RGB')
+                img_np = np.array(img).astype(np.float32) / 255.0
+                img_tensor = torch.from_numpy(img_np).permute(2, 0, 1)
+                batch_tensors.append(img_tensor)
+                del img, img_np
             
-            # PyTorchテンソルに変換
-            img_np = np.array(img).astype(np.float32) / 255.0
-            del img  # PIL画像を即座に解放
+            # バッチテンソルを作成してGPUへ転送
+            batch_tensor = torch.stack(batch_tensors, dim=0).to(device)
+            del batch_tensors
             
-            img_tensor = torch.from_numpy(img_np).permute(2, 0, 1).unsqueeze(0).to(device)
-            del img_np  # numpy配列を即座に解放
+            w, h = batch_tensor.shape[3], batch_tensor.shape[2]
             
             with torch.no_grad():
                 if use_model:
-                    # Real-ESRGANモデルで処理（4倍出力）
-                    output_tensor = model(img_tensor)
-                    del img_tensor  # 入力テンソルを即座に解放
-                    
-                    # scale=2の場合は4倍出力を2倍にリサイズ
-                    if scale == 2:
-                        output_tensor = F.interpolate(
-                            output_tensor,
-                            size=(h * 2, w * 2),  # PyTorchは(height, width)の順
-                            mode='bicubic',
-                            align_corners=False
-                        )
+                    # Real-ESRGANモデルで処理（常に4倍出力）
+                    output_tensor = model(batch_tensor)
                 else:
                     # Bicubicフォールバック
                     output_tensor = F.interpolate(
-                        img_tensor,
-                        size=(h * scale, w * scale),
+                        batch_tensor,
+                        size=(h * 4, w * 4),
                         mode='bicubic',
                         align_corners=False
                     )
-                    del img_tensor
+                del batch_tensor
             
-            # 出力を保存（GPU→CPU転送を最小化）
-            output_np = output_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy()
-            del output_tensor  # GPUテンソルを即座に解放
+            # 出力をCPUに移動して保存
+            output_np = output_tensor.cpu().numpy()
+            del output_tensor
             
-            output_np = np.clip(output_np * 255.0, 0, 255).astype(np.uint8)
-            output_img = Image.fromarray(output_np, 'RGB')
-            del output_np  # numpy配列を即座に解放
+            for idx, frame_path in enumerate(batch_paths):
+                frame_output = output_np[idx].transpose(1, 2, 0)
+                frame_output = np.clip(frame_output * 255.0, 0, 255).astype(np.uint8)
+                output_img = Image.fromarray(frame_output, 'RGB')
+                output_path = output_dir / frame_path.name
+                output_img.save(output_path, 'PNG', compress_level=1)
+                del frame_output, output_img
+                processed += 1
             
-            output_path = output_dir / frame_path.name
-            output_img.save(output_path, 'PNG', compress_level=1)
-            del output_img  # PIL画像を即座に解放
+            del output_np
             
-            processed += 1
+            # 定期的な進捗ログ出力
+            current_time = time.time()
+            if processed % progress_interval == 0 or current_time - last_log_time > 300:
+                elapsed = current_time - start_time
+                fps = (processed - len(existing_frames)) / elapsed if elapsed > 0 else 0
+                remaining = len(frame_files) - processed
+                eta_seconds = remaining / fps if fps > 0 else 0
+                eta_hours = eta_seconds / 3600
+                
+                progress_msg = (
+                    f"進捗: {processed}/{len(frame_files)} ({processed/len(frame_files)*100:.1f}%) | "
+                    f"速度: {fps:.2f} fps | 残り時間: {eta_hours:.1f}時間"
+                )
+                logger.info(progress_msg)
+                last_log_time = current_time
             
             # 定期的なメモリクリーンアップ
-            if (i + 1) % gc_interval == 0:
+            if (batch_start // batch_size + 1) % gc_interval == 0:
                 if device == 'cuda':
                     torch.cuda.empty_cache()
                 import gc
                 gc.collect()
             
         except Exception as e:
-            logger.error(f"フレーム処理エラー: {frame_path}, {e}")
-            # エラー時もメモリをクリーンアップ
+            logger.error(f"バッチ処理エラー: {batch_paths}, {e}")
             if device == 'cuda':
                 torch.cuda.empty_cache()
             import gc
             gc.collect()
+            # エラー時は1フレームずつリトライ
+            for frame_path in batch_paths:
+                try:
+                    img = Image.open(frame_path).convert('RGB')
+                    w, h = img.size
+                    img_np = np.array(img).astype(np.float32) / 255.0
+                    img_tensor = torch.from_numpy(img_np).permute(2, 0, 1).unsqueeze(0).to(device)
+                    del img, img_np
+                    
+                    with torch.no_grad():
+                        if use_model:
+                            output_tensor = model(img_tensor)
+                        else:
+                            output_tensor = F.interpolate(img_tensor, size=(h * 4, w * 4), mode='bicubic', align_corners=False)
+                        del img_tensor
+                    
+                    output_np = output_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy()
+                    del output_tensor
+                    output_np = np.clip(output_np * 255.0, 0, 255).astype(np.uint8)
+                    output_img = Image.fromarray(output_np, 'RGB')
+                    output_path = output_dir / frame_path.name
+                    output_img.save(output_path, 'PNG', compress_level=1)
+                    del output_np, output_img
+                    processed += 1
+                except Exception as e2:
+                    logger.error(f"フレーム処理エラー（リトライ）: {frame_path}, {e2}")
+                finally:
+                    if device == 'cuda':
+                        torch.cuda.empty_cache()
             continue
     
     # 最終クリーンアップ

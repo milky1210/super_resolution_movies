@@ -27,6 +27,7 @@ def rebuild_video(
     crf: int = 18,
     preset: str = "medium",
     pixel_format: str = "yuv420p",
+    output_resolution: Optional[tuple[int, int]] = None,
 ) -> bool:
     """
     フレーム画像から動画を再構成する
@@ -43,6 +44,7 @@ def rebuild_video(
         crf: 品質設定（低いほど高品質、0-51の範囲）
         preset: エンコード速度プリセット
         pixel_format: ピクセルフォーマット
+        output_resolution: 最終出力解像度 (width, height)、Noneの場合はフレームそのまま
         
     Returns:
         bool: 成功した場合True
@@ -68,6 +70,8 @@ def rebuild_video(
     
     total_frames = len(frame_files)
     logger.info(f"動画再構成開始: {total_frames}フレーム, FPS: {fps}")
+    if output_resolution:
+        logger.info(f"最終出力解像度: {output_resolution[0]}x{output_resolution[1]}")
     
     # 出力ディレクトリの作成
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -88,6 +92,10 @@ def rebuild_video(
         cmd.extend(["-c:a", audio_codec])
         cmd.extend(["-shortest"])  # 短い方に合わせる
         logger.info(f"音声を追加: {audio_path}")
+    
+    # ビデオフィルタ（リサイズが必要な場合）
+    if output_resolution:
+        cmd.extend(["-vf", f"scale={output_resolution[0]}:{output_resolution[1]}:flags=lanczos"])
     
     # ビデオエンコード設定
     cmd.extend([

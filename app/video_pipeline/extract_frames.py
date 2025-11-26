@@ -24,6 +24,7 @@ def extract_frames(
     ffprobe_path: str = "ffprobe",
     frame_pattern: str = "%06d.png",
     fps: Optional[float] = None,
+    scale_factor: Optional[float] = None,
 ) -> tuple[int, float]:
     """
     動画からフレームを抽出する
@@ -35,6 +36,7 @@ def extract_frames(
         ffprobe_path: ffprobeのパス
         frame_pattern: 出力ファイル名のパターン（例：%06d.png）
         fps: 抽出するFPS（Noneの場合は元動画のFPSを使用）
+        scale_factor: 抽出時のリサイズ倍率（0.5で半分、Noneでそのまま）
         
     Returns:
         tuple[int, float]: (抽出したフレーム数, 使用したFPS)
@@ -62,13 +64,28 @@ def extract_frames(
     
     logger.info(f"元動画のFPS: {original_fps}, 使用FPS: {target_fps}, 長さ: {duration:.2f}秒")
     
+    # フィルタチェーンの構築
+    vf_filters = [f"fps={target_fps}"]
+    
+    if scale_factor is not None and scale_factor != 1.0:
+        # 縮小リサイズ（偶数にする）
+        orig_w = video_info.get("width", 1920)
+        orig_h = video_info.get("height", 1080)
+        new_w = int(orig_w * scale_factor)
+        new_h = int(orig_h * scale_factor)
+        # 偶数に丸める
+        new_w = new_w - (new_w % 2)
+        new_h = new_h - (new_h % 2)
+        vf_filters.append(f"scale={new_w}:{new_h}")
+        logger.info(f"リサイズ: {orig_w}x{orig_h} -> {new_w}x{new_h} (x{scale_factor})")
+    
     # ffmpegコマンドの構築
     output_path = output_dir / frame_pattern
     cmd = [
         ffmpeg_path,
         "-y",  # 上書き確認なし
         "-i", str(video_path),
-        "-vf", f"fps={target_fps}",
+        "-vf", ",".join(vf_filters),
         "-q:v", "2",  # 高品質
         str(output_path)
     ]

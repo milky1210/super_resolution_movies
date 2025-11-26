@@ -115,6 +115,20 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="出力動画のフレームレート（未指定時は元動画を引き継ぐ）",
     )
+    parser.add_argument(
+        "--pre-shrink",
+        type=float,
+        default=None,
+        dest="pre_shrink",
+        help="超解像前に縮小する倍率（0.5で半分に縮小、超解像後に元サイズに戻す）",
+    )
+    parser.add_argument(
+        "--output-height",
+        type=int,
+        default=None,
+        dest="output_height",
+        help="出力動画の高さ（幅はアスペクト比維持、例: 1080）",
+    )
     
     # ディレクトリオプション
     parser.add_argument(
@@ -226,6 +240,8 @@ def process_video(
     cleanup: bool = True,
     crf: Optional[int] = None,
     preset: str = "medium",
+    pre_shrink: Optional[float] = None,
+    output_height: Optional[int] = None,
 ) -> bool:
     """
     動画の超解像処理を実行する
@@ -241,6 +257,8 @@ def process_video(
         cleanup: 処理後に一時ファイルを削除するか
         crf: 出力品質
         preset: エンコードプリセット
+        pre_shrink: 超解像前に縮小する倍率（例: 0.5で半分）
+        output_height: 出力動画の高さ（Noneの場合はスケール後のサイズ）
         
     Returns:
         bool: 成功した場合True
@@ -289,10 +307,43 @@ def process_video(
         logger.info("=" * 50)
         
         video_info = get_video_info(input_path, settings.ffprobe_path)
-        logger.info(f"解像度: {video_info['width']}x{video_info['height']}")
+        original_width = video_info['width']
+        original_height = video_info['height']
+        logger.info(f"解像度: {original_width}x{original_height}")
         logger.info(f"FPS: {video_info['fps']}")
         logger.info(f"長さ: {video_info['duration']:.2f}秒")
         logger.info(f"音声: {'あり' if video_info['has_audio'] else 'なし'}")
+        
+        # パイプライン設定の計算
+        if pre_shrink:
+            shrink_w = int(original_width * pre_shrink)
+            shrink_h = int(original_height * pre_shrink)
+            shrink_w = shrink_w - (shrink_w % 2)  # 偶数に
+            shrink_h = shrink_h - (shrink_h % 2)
+            logger.info(f"前処理縮小: {original_width}x{original_height} -> {shrink_w}x{shrink_h}")
+            upscaled_w = shrink_w * scale
+            upscaled_h = shrink_h * scale
+            logger.info(f"超解像後: {upscaled_w}x{upscaled_h}")
+        else:
+            upscaled_w = original_width * scale
+            upscaled_h = original_height * scale
+        
+        # 最終出力解像度
+        if output_height:
+            # アスペクト比を維持して指定高さにリサイズ
+            aspect = original_width / original_height
+            final_height = output_height
+            final_width = int(final_height * aspect)
+            final_width = final_width - (final_width % 2)  # 偶数に
+            output_resolution = (final_width, final_height)
+            logger.info(f"最終出力: {final_width}x{final_height}")
+        elif pre_shrink:
+            # 縮小→超解像の場合、元サイズに戻す
+            output_resolution = (original_width, original_height)
+            logger.info(f"最終出力: {original_width}x{original_height}（元サイズに復元）")
+        else:
+            output_resolution = None
+            logger.info(f"最終出力: {upscaled_w}x{upscaled_h}")
         
         target_fps = fps if fps is not None else video_info["fps"]
         
@@ -309,6 +360,7 @@ def process_video(
                 ffprobe_path=settings.ffprobe_path,
                 frame_pattern=settings.frame_pattern,
                 fps=target_fps,
+                scale_factor=pre_shrink,
             )
             logger.info(f"抽出完了: {frame_count}フレーム")
         else:
@@ -364,17 +416,17 @@ def process_video(
             audio_codec=settings.default_audio_codec,
             crf=crf if crf is not None else settings.default_crf,
             preset=preset,
+            output_resolution=output_resolution,
         )
         
         if success:
             logger.info("=" * 50)
             logger.info("処理完了！")
             logger.info(f"出力ファイル: {output_path}")
-            target_resolution = (
-                video_info["width"] * scale,
-                video_info["height"] * scale
-            )
-            logger.info(f"出力解像度: {target_resolution[0]}x{target_resolution[1]}")
+            if output_resolution:
+                logger.info(f"出力解像度: {output_resolution[0]}x{output_resolution[1]}")
+            else:
+                logger.info(f"出力解像度: {upscaled_w}x{upscaled_h}")
             logger.info("=" * 50)
         
         return success
@@ -462,6 +514,8 @@ def main() -> int:
             cleanup=not args.no_cleanup,
             crf=args.crf,
             preset=args.preset,
+            pre_shrink=args.pre_shrink,
+            output_height=args.output_height,
         )
         
         return 0 if success else 1
